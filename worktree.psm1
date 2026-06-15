@@ -189,9 +189,14 @@ function Invoke-WtSwitch {
 
 
 function Invoke-WtRemove {
+    param(
+        [switch] $Force
+    )
+
     # Ensure we are inside a git repository environment (worktree or bare)
     $insideWorkTree = git rev-parse --is-inside-work-tree 2>$null
     $isBareRepo     = git rev-parse --is-bare-repository 2>$null
+
 
     if (-not ($insideWorkTree -eq 'true' -or $isBareRepo -eq 'true')) {
         Write-Warning "Not in a Git repository or a bare repository context."
@@ -273,13 +278,22 @@ function Invoke-WtRemove {
 
     $targetPath, $name, $branch = $selected -split "`t", 3
 
-    $confirmation = Read-Host "Remove worktree '$name' ($branch) at '$targetPath'? Type 'yes' to confirm"
-    if ($confirmation -ne 'yes') {
-        Write-Host "Removal cancelled." -ForegroundColor Yellow
-        return
+    if (-not $Force) {
+        $confirmation = Read-Host "Remove worktree '$name' ($branch) at '$targetPath'? Type 'yes' to confirm"
+        if ($confirmation -ne 'yes') {
+            Write-Host "Removal cancelled." -ForegroundColor Yellow
+            return
+        }
+    } else {
+        Write-Host "Force-removing worktree '$name' ($branch) at '$targetPath'..." -ForegroundColor Yellow
     }
 
-    git worktree remove $targetPath
+    if ($Force) {
+        git worktree remove --force $targetPath
+    } else {
+        git worktree remove $targetPath
+    }
+
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Removed worktree: $targetPath" -ForegroundColor Green
     } else {
