@@ -160,6 +160,21 @@ function Invoke-WtSwitch {
         return
     }
 
+    # Exclude the current worktree from the switch targets. If Resolve-Path fails (stale entry), keep it so it can be cleaned up.
+    $currentPath = (Get-Location).ProviderPath
+    $entries = $entries | Where-Object {
+        try {
+            (Resolve-Path $_.Path).ProviderPath -ne $currentPath
+        } catch {
+            $true
+        }
+    }
+
+    if (-not $entries) {
+        Write-Warning "No other worktrees to switch to (current worktree is excluded)."
+        return
+    }
+
     $items = $entries | ForEach-Object {
         $name   = Split-Path -Leaf $_.Path
         $branch = if ($_.Branch) { $_.Branch } else { '(detached HEAD)' }
