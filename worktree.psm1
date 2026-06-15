@@ -89,6 +89,8 @@ function Invoke-WtSwitch {
             $current.Path = $Matches[1]
         } elseif ($line -match '^branch (.+)$') {
             $current.Branch = $Matches[1]
+        } elseif ($line -eq 'bare') {
+            $current.Bare = $true
         }
     }
 
@@ -96,15 +98,17 @@ function Invoke-WtSwitch {
         $entries += [pscustomobject]$current
     }
 
+    # Omit the bare repo entry
+    $entries = $entries | Where-Object { -not $_.Bare }
+
     if (-not $entries) {
         Write-Error "No Git worktrees found."
         return
     }
 
     $items = $entries | ForEach-Object {
-        $branchName = if ($_.Branch) { $_.Branch } else { "(detached HEAD)" }
-        $display = "{0} [{1}]" -f $_.Path, $branchName
-        "{0}`t{1}" -f $_.Path, $display
+        $name = Split-Path -Leaf $_.Path
+        "{0}`t{1}" -f $_.Path, $name
     }
 
     $selected = $items | fzf `
@@ -112,8 +116,11 @@ function Invoke-WtSwitch {
         --height 40% `
         --layout=reverse `
         --border `
-        --prompt 'Select worktree to switch to: ' `
-        --with-nth=2..
+        --delimiter "`t" `
+        --with-nth=2.. `
+        --preview 'git -C {1} log --graph --decorate --color=always -n 20 --pretty=format:"%C(auto)%h %C(bold blue)%an%Creset %s %C(dim green)(%cr)%Creset"' `
+        --preview-window 'right:70%:wrap' `
+        --prompt 'Select worktree to switch to: '
 
     if ([string]::IsNullOrEmpty($selected)) {
         Write-Host "Selection cancelled." -ForegroundColor Yellow
@@ -149,6 +156,8 @@ function Invoke-WtRemove {
             $current.Path = $Matches[1]
         } elseif ($line -match '^branch (.+)$') {
             $current.Branch = $Matches[1]
+        } elseif ($line -eq 'bare') {
+            $current.Bare = $true
         }
     }
 
@@ -157,14 +166,14 @@ function Invoke-WtRemove {
     }
 
     if (-not $entries) {
-        Write-Error "No Git worktrees found."
+        Write-Error "No Git worktrees found.";
         return
     }
 
     $currentPath = (Get-Location).ProviderPath
     $entries = $entries | Where-Object {
         try {
-            (Resolve-Path $_.Path).ProviderPath -ne $currentPath
+            -not $_.Bare -and (Resolve-Path $_.Path).ProviderPath -ne $currentPath
         } catch {
             $true
         }
@@ -176,9 +185,8 @@ function Invoke-WtRemove {
     }
 
     $items = $entries | ForEach-Object {
-        $branchName = if ($_.Branch) { $_.Branch } else { "(detached HEAD)" }
-        $display = "{0} [{1}]" -f $_.Path, $branchName
-        "{0}`t{1}" -f $_.Path, $display
+        $name = Split-Path -Leaf $_.Path
+        "{0}`t{1}" -f $_.Path, $name
     }
 
     $selected = $items | fzf `
@@ -186,8 +194,11 @@ function Invoke-WtRemove {
         --height 40% `
         --layout=reverse `
         --border `
-        --prompt 'Select worktree to remove: ' `
-        --with-nth=2..
+        --delimiter "`t" `
+        --with-nth=2.. `
+        --preview 'git -C {1} log --graph --decorate --color=always -n 20 --pretty=format:"%C(auto)%h %C(bold blue)%an%Creset %s %C(dim green)(%cr)%Creset"' `
+        --preview-window 'right:70%:wrap' `
+        --prompt 'Select worktree to remove: '
 
     if ([string]::IsNullOrEmpty($selected)) {
         Write-Host "Selection cancelled." -ForegroundColor Yellow

@@ -17,7 +17,6 @@ Works especially well with bare-repo + sibling-worktree setups.
 ## Files
 
 - `worktree.psm1` – main module exposing a single command: `wt`
-- `worktree-add.ps1` / `worktree-switch.ps1` / `worktree-remove.ps1` – standalone script versions (optional)
 
 ## Installation
 
