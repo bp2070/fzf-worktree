@@ -7,25 +7,46 @@
       - wt switch  : switch to an existing worktree
       - wt rm      : remove an existing worktree
 #>
+function Test-FzfAvailable {
+    # Simple dependency check so failures are clearer than a missing-command error
+    $fzf = Get-Command fzf -ErrorAction SilentlyContinue
+    if (-not $fzf) {
+        Write-Error "fzf not found in PATH. Please install fzf and ensure it is available before using 'wt'."
+        return $false
+    }
+
+    return $true
+}
+
 
 function Invoke-WtAdd {
-    # Ensure we are inside a git repository environment
-    if (-not (git rev-parse --is-inside-work-tree 2>$null -eq "true" -or (git rev-parse --is-bare-repository 2>$null -eq "true"))) {
+    # Ensure we are inside a git repository environment (worktree or bare)
+    $insideWorkTree = git rev-parse --is-inside-work-tree 2>$null
+    $isBareRepo     = git rev-parse --is-bare-repository 2>$null
+
+    if (-not ($insideWorkTree -eq 'true' -or $isBareRepo -eq 'true')) {
         Write-Warning "Not in a Git repository or a bare repository context."
         return
     }
-
     # Fetch the latest remote updates to ensure the list is fresh
-    Write-Host "Fetching latest remote branches..." -ForegroundColor Cyan
+    if (-not (Test-FzfAvailable)) {
+        return
+    }
+
+    Write-Host "Fetching latest remote branches from 'origin'..." -ForegroundColor Cyan
     git fetch origin --prune
 
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to fetch from remote 'origin'."
+        return
+    }
     # Get remote branches, using commit date (most recent first) and filtering out HEAD pointer variations
     $remoteBranches = git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/remotes/origin |
         Where-Object { $_ -notmatch 'HEAD$' -and $_ -notmatch '->' } |
         ForEach-Object { $_.Trim() }
 
     if (-not $remoteBranches) {
-        Write-Error "No remote branches found."
+        Write-Error "No remote branches found on 'origin'."
         return
     }
 
@@ -44,18 +65,42 @@ function Invoke-WtAdd {
         return
     }
 
-    # Derive local folder name from branch
-    $localBranchName = $selectedRemote -replace '^[^/]+/', ''
-    $folderName = $localBranchName -replace '/', '-'
-    $targetPath = Join-Path (Get-Item .).Parent.FullName $folderName
+    # Derive local branch name and folder name from remote ref
+    $localBranchName = $selectedRemote -replace '^[^/]+/', ''   # origin/feature/foo -> feature/foo
+    $folderName      = $localBranchName -replace '/', '-'
+
+    # Prefer placing worktrees as siblings of the repository root (or bare repo)
+    $repoRoot = git rev-parse --show-toplevel 2>$null
+    if ($repoRoot) {
+        $parentDir = Split-Path $repoRoot -Parent
+    } else {
+        # Fallback for bare repositories where --show-toplevel is not available
+        $parentDir = (Get-Item .).Parent.FullName
+    }
+
+    $targetPath = Join-Path $parentDir $folderName
 
     if (Test-Path $targetPath) {
         Write-Warning "The path '$targetPath' already exists. Aborting to avoid overwriting files."
         return
     }
 
+    # Determine whether a local branch with this name already exists
+    $localBranchExists = $false
+    git show-ref --verify --quiet ("refs/heads/{0}" -f $localBranchName) 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $localBranchExists = $true
+    }
+
     Write-Host "Creating worktree for branch '$localBranchName' at '$targetPath'..." -ForegroundColor Green
-    git worktree add $targetPath $selectedRemote
+
+    if ($localBranchExists) {
+        # Use the existing local branch
+        git worktree add $targetPath $localBranchName
+    } else {
+        # Create a local branch that tracks the selected remote branch to avoid detached HEAD worktrees
+        git worktree add -b $localBranchName $targetPath $selectedRemote
+    }
 
     if ($LASTEXITCODE -eq 0) {
         Set-Location $targetPath
@@ -65,9 +110,18 @@ function Invoke-WtAdd {
     }
 }
 
+
 function Invoke-WtSwitch {
-    if (-not (git rev-parse --is-inside-work-tree 2>$null -eq "true" -or (git rev-parse --is-bare-repository 2>$null -eq "true"))) {
+    # Ensure we are inside a git repository environment (worktree or bare)
+    $insideWorkTree = git rev-parse --is-inside-work-tree 2>$null
+    $isBareRepo     = git rev-parse --is-bare-repository 2>$null
+
+    if (-not ($insideWorkTree -eq 'true' -or $isBareRepo -eq 'true')) {
         Write-Warning "Not in a Git repository or a bare repository context."
+        return
+    }
+
+    if (-not (Test-FzfAvailable)) {
         return
     }
 
@@ -107,8 +161,9 @@ function Invoke-WtSwitch {
     }
 
     $items = $entries | ForEach-Object {
-        $name = Split-Path -Leaf $_.Path
-        "{0}`t{1}" -f $_.Path, $name
+        $name   = Split-Path -Leaf $_.Path
+        $branch = if ($_.Branch) { $_.Branch } else { '(detached HEAD)' }
+        "{0}`t{1}`t{2}" -f $_.Path, $name, $branch
     }
 
     $selected = $items | fzf `
@@ -127,14 +182,23 @@ function Invoke-WtSwitch {
         return
     }
 
-    $targetPath = ($selected -split "`t", 2)[0]
+    $targetPath = ($selected -split "`t", 3)[0]
     Set-Location $targetPath
     Write-Host "Switched to worktree: $targetPath" -ForegroundColor Green
 }
 
+
 function Invoke-WtRemove {
-    if (-not (git rev-parse --is-inside-work-tree 2>$null -eq "true" -or (git rev-parse --is-bare-repository 2>$null -eq "true"))) {
+    # Ensure we are inside a git repository environment (worktree or bare)
+    $insideWorkTree = git rev-parse --is-inside-work-tree 2>$null
+    $isBareRepo     = git rev-parse --is-bare-repository 2>$null
+
+    if (-not ($insideWorkTree -eq 'true' -or $isBareRepo -eq 'true')) {
         Write-Warning "Not in a Git repository or a bare repository context."
+        return
+    }
+
+    if (-not (Test-FzfAvailable)) {
         return
     }
 
@@ -166,11 +230,12 @@ function Invoke-WtRemove {
     }
 
     if (-not $entries) {
-        Write-Error "No Git worktrees found.";
+        Write-Error "No Git worktrees found."
         return
     }
 
     $currentPath = (Get-Location).ProviderPath
+    # Exclude bare repo entry and the current worktree. If Resolve-Path fails (stale entry), keep it so it can be cleaned up.
     $entries = $entries | Where-Object {
         try {
             -not $_.Bare -and (Resolve-Path $_.Path).ProviderPath -ne $currentPath
@@ -185,8 +250,9 @@ function Invoke-WtRemove {
     }
 
     $items = $entries | ForEach-Object {
-        $name = Split-Path -Leaf $_.Path
-        "{0}`t{1}" -f $_.Path, $name
+        $name   = Split-Path -Leaf $_.Path
+        $branch = if ($_.Branch) { $_.Branch } else { '(detached HEAD)' }
+        "{0}`t{1}`t{2}" -f $_.Path, $name, $branch
     }
 
     $selected = $items | fzf `
@@ -205,9 +271,9 @@ function Invoke-WtRemove {
         return
     }
 
-    $targetPath = ($selected -split "`t", 2)[0]
+    $targetPath, $name, $branch = $selected -split "`t", 3
 
-    $confirmation = Read-Host "Remove worktree at '$targetPath'? Type 'yes' to confirm"
+    $confirmation = Read-Host "Remove worktree '$name' ($branch) at '$targetPath'? Type 'yes' to confirm"
     if ($confirmation -ne 'yes') {
         Write-Host "Removal cancelled." -ForegroundColor Yellow
         return
@@ -220,6 +286,7 @@ function Invoke-WtRemove {
         Write-Error "Failed to remove Git worktree at '$targetPath'."
     }
 }
+
 
 function wt {
     param(
@@ -261,4 +328,4 @@ Register-ArgumentCompleter -CommandName wt -ParameterName Subcommand -ScriptBloc
         }
 }
 
-Export-ModuleMember -Function wt, Invoke-WtAdd, Invoke-WtSwitch, Invoke-WtRemove
+Export-ModuleMember -Function wt

@@ -12,6 +12,16 @@ PowerShell helpers for working with Git worktrees using [fzf](https://github.com
 - `git` in `PATH`
 - `fzf` in `PATH`
 
+> Note: commands assume a remote named `origin` exists; remote branches are listed from `origin` only.
+
+Typical bare-repo + sibling-worktree layout:
+
+```text
+repo.git/        # bare repository
+feature-xyz/     # worktree created by `wt add`
+bugfix-abc/      # another worktree
+```
+
 ## Files
 
 - `worktree.psm1` – main module exposing a single command: `wt`
@@ -21,7 +31,7 @@ PowerShell helpers for working with Git worktrees using [fzf](https://github.com
 Clone somewhere you control, e.g.:
 
 ```powershell
-git clone https://github.com/bp2070/fzf-worktree $HOME\opt\fzf-worktree"
+git clone https://github.com/bp2070/fzf-worktree "$HOME\opt\fzf-worktree"
 ```
 
 Import the module (add this to your PowerShell profile for persistence):
