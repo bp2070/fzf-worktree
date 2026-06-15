@@ -1,12 +1,10 @@
-# fzf-worktree (PowerShell)
+# fzf-worktree
 
-PowerShell helpers for working with Git worktrees using [fzf](https://github.com/junegunn/fzf).
+PowerShell helpers for working with Git worktrees using [fzf](https://github.com/junegunn/fzf). Works especially well with bare-repo + sibling-worktree setups.
 
 - **Add**: create a new worktree from a remote branch (with commit preview)
 - **Switch**: jump to an existing worktree
 - **Remove**: delete an existing worktree (with confirmation)
-
-Works especially well with bare-repo + sibling-worktree setups.
 
 ## Requirements
 
@@ -23,13 +21,13 @@ Works especially well with bare-repo + sibling-worktree setups.
 Clone somewhere you control, e.g.:
 
 ```powershell
-git clone https://github.com/<you>/fzf-worktree.git "$HOME\Tools\fzf-worktree"
+git clone https://github.com/bp2070/fzf-worktree $HOME\opt\fzf-worktree"
 ```
 
 Import the module (add this to your PowerShell profile for persistence):
 
 ```powershell
-Import-Module "$HOME\Tools\fzf-worktree\worktree.psm1"
+Import-Module "$HOME\opt\fzf-worktree\worktree.psm1"
 ```
 
 ## Usage
