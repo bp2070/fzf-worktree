@@ -4,7 +4,7 @@ PowerShell helpers for working with Git worktrees using [fzf](https://github.com
 
 - **Add**: create a new worktree from a remote branch (with commit preview)
 - **Switch**: jump to an existing worktree
-- **Remove**: delete an existing worktree (with confirmation)
+- **Remove**: delete one or more existing worktrees (with confirmation and protection for local changes)
 
 ## Requirements
 
@@ -47,7 +47,10 @@ From any Git repo (bare or non-bare):
 ```powershell
 wt add       # select a remote branch via fzf, create a new sibling worktree, cd into it
 wt switch    # pick an existing worktree via fzf and cd into it
-wt rm        # pick a worktree via fzf and remove it (excluding the current one)
+wt rm        # select one or more worktrees via fzf and remove them (excluding the current one)
+wt rm -Force # force-remove selected worktrees, discarding local changes
 ```
+
+Clean selected worktrees are removed without a confirmation. If any selected worktree contains modified or untracked files, `wt rm` shows one force-removal confirmation; type `y` to discard those changes. `wt rm -Force` also requires one `y` confirmation before force-removing the selection.
 
 Tab completion is available for `wt` subcommands.

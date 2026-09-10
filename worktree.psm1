@@ -257,10 +257,12 @@ function Invoke-WtRemove {
     $currentPath = (Get-Location).ProviderPath
     # Exclude bare repo entry and the current worktree. If Resolve-Path fails (stale entry), keep it so it can be cleaned up.
     $entries = $entries | Where-Object {
-        try {
-            -not $_.Bare -and (Resolve-Path $_.Path).ProviderPath -ne $currentPath
-        } catch {
-            $true
+        if (-not $_.Bare) {
+            try {
+                (Resolve-Path $_.Path).ProviderPath -ne $currentPath
+            } catch {
+                $true
+            }
         }
     }
 
@@ -275,7 +277,8 @@ function Invoke-WtRemove {
         "{0}`t{1}`t{2}" -f $_.Path, $name, $branch
     }
 
-    $selected = $items | fzf `
+    $selected = @($items | fzf `
+        --multi `
         --no-sort `
         --height 40% `
         --layout=reverse `
@@ -284,35 +287,68 @@ function Invoke-WtRemove {
         --with-nth=2.. `
         --preview 'git -C {1} log --graph --decorate --color=always -n 20 --pretty=format:"%C(auto)%h %C(bold blue)%an%Creset %s %C(dim green)(%cr)%Creset"' `
         --preview-window 'right:70%:wrap' `
-        --prompt 'Select worktree to remove: '
+        --prompt 'Select worktrees to remove: ')
 
-    if ([string]::IsNullOrEmpty($selected)) {
+    if (-not $selected) {
         Write-Host "Selection cancelled." -ForegroundColor Yellow
         return
     }
 
-    $targetPath, $name, $branch = $selected -split "`t", 3
+    $selectedWorktrees = @($selected | ForEach-Object {
+        $targetPath, $name, $branch = $_ -split "`t", 3
+        $status = @(git -C $targetPath status --porcelain --untracked-files=all 2>$null)
+        $isDirty = $LASTEXITCODE -eq 0 -and $status.Count -gt 0
 
-    if (-not $Force) {
-        $confirmation = Read-Host "Remove worktree '$name' ($branch) at '$targetPath'? Type 'yes' to confirm"
-        if ($confirmation -ne 'yes') {
+        [pscustomobject]@{
+            Path = $targetPath
+            Name = $name
+            Branch = $branch
+            IsDirty = $isDirty
+        }
+    })
+
+    $dirtyWorktrees = @($selectedWorktrees | Where-Object { $_.IsDirty })
+    $forceDirtyWorktrees = $Force
+    $worktreesToRemove = $selectedWorktrees
+
+    if ($Force -or $dirtyWorktrees) {
+        if ($Force) {
+            Write-Host "The following worktrees will be force-removed:" -ForegroundColor Yellow
+            $worktreesToRemove | ForEach-Object {
+                Write-Host "  $($_.Name) ($($_.Branch)) at '$($_.Path)'" -ForegroundColor Yellow
+            }
+            $confirmation = Read-Host "Force-remove $($worktreesToRemove.Count) worktree(s) and discard any changes? Type 'y' to confirm"
+        } else {
+            Write-Warning "The following worktrees contain modified or untracked files and will be force-removed:"
+            $dirtyWorktrees | ForEach-Object {
+                Write-Host "  $($_.Name) ($($_.Branch)) at '$($_.Path)'" -ForegroundColor Yellow
+            }
+            $confirmation = Read-Host "Remove $($worktreesToRemove.Count) worktree(s) and discard changes in $($dirtyWorktrees.Count) worktree(s)? Type 'y' to confirm"
+        }
+
+        if ($confirmation -ne 'y') {
             Write-Host "Removal cancelled." -ForegroundColor Yellow
             return
         }
-    } else {
-        Write-Host "Force-removing worktree '$name' ($branch) at '$targetPath'..." -ForegroundColor Yellow
+
+        if ($dirtyWorktrees) {
+            $forceDirtyWorktrees = $true
+        }
     }
 
-    if ($Force) {
-        git worktree remove --force $targetPath
-    } else {
-        git worktree remove $targetPath
-    }
+    foreach ($worktree in $worktreesToRemove) {
+        if ($Force -or ($forceDirtyWorktrees -and $worktree.IsDirty)) {
+            Write-Host "Force-removing worktree '$($worktree.Name)' ($($worktree.Branch)) at '$($worktree.Path)'..." -ForegroundColor Yellow
+            git worktree remove --force $worktree.Path
+        } else {
+            git worktree remove $worktree.Path
+        }
 
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Removed worktree: $targetPath" -ForegroundColor Green
-    } else {
-        Write-Error "Failed to remove Git worktree at '$targetPath'."
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Removed worktree: $($worktree.Path)" -ForegroundColor Green
+        } else {
+            Write-Error "Failed to remove Git worktree at '$($worktree.Path)'."
+        }
     }
 }
 
