@@ -2,6 +2,7 @@
 
 PowerShell helpers for working with Git worktrees using [fzf](https://github.com/junegunn/fzf). Works especially well with bare-repo + sibling-worktree setups.
 
+- **New**: create a new worktree with a given name (or prompt if omitted) and switch to it
 - **Add**: create a new worktree from a remote branch (with commit preview)
 - **Switch**: jump to an existing worktree
 - **Remove**: delete one or more existing worktrees (with confirmation and protection for local changes)
@@ -45,6 +46,7 @@ Import-Module "$HOME\opt\fzf-worktree\worktree.psm1"
 From any Git repo (bare or non-bare):
 
 ```powershell
+wt new <name> # create a new worktree with the given name (prompts if omitted), cd into it
 wt add       # select a remote branch via fzf, create a new sibling worktree, cd into it
 wt switch    # pick an existing worktree via fzf and cd into it
 wt rm        # select one or more worktrees via fzf and remove them (excluding the current one)

@@ -21,6 +21,7 @@ The module currently exports only:
 - `wt`
 
 Supported subcommands:
+- `wt new`
 - `wt add`
 - `wt switch`
 - `wt rm`
@@ -92,6 +93,7 @@ If you change user-facing behavior, also:
 - sanity-check command names and examples
 
 If interactive behavior is modified and a real Git repo is available, manually test the affected flow:
+- `wt new`
 - `wt add`
 - `wt switch`
 - `wt rm`

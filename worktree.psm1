@@ -3,6 +3,7 @@
     Git worktree helper commands using fzf.
 .DESCRIPTION
     Provides a single `wt` command with subcommands:
+      - wt new     : create a new worktree with a given name
       - wt add     : create a new worktree from a remote branch
       - wt switch  : switch to an existing worktree
       - wt rm      : remove an existing worktree
@@ -16,6 +17,74 @@ function Test-FzfAvailable {
     }
 
     return $true
+}
+
+
+function Invoke-WtNew {
+    param(
+        [Parameter(Position=0)] [string] $Name
+    )
+
+    # Ensure we are inside a git repository environment (worktree or bare)
+    $insideWorkTree = git rev-parse --is-inside-work-tree 2>$null
+    $isBareRepo     = git rev-parse --is-bare-repository 2>$null
+
+    if (-not ($insideWorkTree -eq 'true' -or $isBareRepo -eq 'true')) {
+        Write-Warning "Not in a Git repository or a bare repository context."
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        $Name = Read-Host "Enter name for new worktree"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        Write-Host "Creation cancelled: no worktree name provided." -ForegroundColor Yellow
+        return
+    }
+
+    $Name = $Name.Trim()
+    $folderName = $Name -replace '/', '-'
+
+    # Prefer placing worktrees as siblings of the repository root (or bare repo)
+    $repoRoot = git rev-parse --show-toplevel 2>$null
+    if ($repoRoot) {
+        $parentDir = Split-Path $repoRoot -Parent
+    } else {
+        # Fallback for bare repositories where --show-toplevel is not available
+        $parentDir = (Get-Item .).Parent.FullName
+    }
+
+    $targetPath = Join-Path $parentDir $folderName
+
+    if (Test-Path $targetPath) {
+        Write-Warning "The path '$targetPath' already exists. Aborting to avoid overwriting files."
+        return
+    }
+
+    # Determine whether a local branch with this name already exists
+    $localBranchExists = $false
+    git show-ref --verify --quiet ("refs/heads/{0}" -f $Name) 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $localBranchExists = $true
+    }
+
+    Write-Host "Creating worktree for branch '$Name' at '$targetPath'..." -ForegroundColor Green
+
+    if ($localBranchExists) {
+        # Use the existing local branch
+        git worktree add $targetPath $Name
+    } else {
+        # Create a new local branch with the given name
+        git worktree add -b $Name $targetPath
+    }
+
+    if ($LASTEXITCODE -eq 0) {
+        Set-Location $targetPath
+        Write-Host "Switched location to: $(Get-Location)" -ForegroundColor Green
+    } else {
+        Write-Error "Failed to create Git worktree."
+    }
 }
 
 
@@ -360,19 +429,21 @@ function wt {
     )
 
     switch ($Subcommand) {
+        'new'     { Invoke-WtNew @Rest }
         'add'     { Invoke-WtAdd @Rest }
         'switch'  { Invoke-WtSwitch @Rest }
         'rm'      { Invoke-WtRemove @Rest }
 
         '' { 
             Write-Host "Usage: wt <subcommand>" -ForegroundColor Yellow
+            Write-Host "  wt new     # create a new worktree with a given name" -ForegroundColor Yellow
             Write-Host "  wt add     # create a new worktree from a remote branch" -ForegroundColor Yellow
             Write-Host "  wt switch  # switch to an existing worktree" -ForegroundColor Yellow
             Write-Host "  wt rm      # remove an existing worktree" -ForegroundColor Yellow
         }
         default {
             Write-Host "Unknown subcommand: $Subcommand" -ForegroundColor Red
-            Write-Host "Valid subcommands: add, switch, rm" -ForegroundColor Yellow
+            Write-Host "Valid subcommands: new, add, switch, rm" -ForegroundColor Yellow
         }
     }
 }
@@ -381,7 +452,7 @@ function wt {
 Register-ArgumentCompleter -CommandName wt -ParameterName Subcommand -ScriptBlock {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
-    'add','switch','rm' |
+    'new','add','switch','rm' |
         Where-Object { $_ -like "$wordToComplete*" } |
         ForEach-Object {
             [System.Management.Automation.CompletionResult]::new(
